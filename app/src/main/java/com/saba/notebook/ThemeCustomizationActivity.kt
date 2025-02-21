@@ -7,7 +7,6 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
-
 import com.skydoves.colorpickerview.ColorPickerDialog
 import com.skydoves.colorpickerview.listeners.ColorEnvelopeListener
 import android.graphics.Color
@@ -17,10 +16,16 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import ir.cafebazaar.poolakey.Payment
+import ir.cafebazaar.poolakey.config.PaymentConfiguration
+import ir.cafebazaar.poolakey.config.SecurityCheck
+import ir.cafebazaar.poolakey.request.PurchaseRequest
 
 class ThemeCustomizationActivity : AppCompatActivity() {
     private lateinit var sharedPreferences: SharedPreferences
     private var userId: Int = -1
+    private lateinit var payment: Payment
+    private lateinit var paymentConnection: Payment.Connection
 
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +48,33 @@ class ThemeCustomizationActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        // Initialize Poolakey
+        val localSecurityCheck = SecurityCheck.Enable(
+            rsaPublicKey = "MIHNMA0GCSqGSIb3DQEBAQUAA4G7ADCBtwKBrwCWe5M7v5PAiqhl83REvg5/ZWQKB40jZ0lauPRoqCV2CtSHafSCCI5FWzd+8omJpPACmZHM6ErhvAjKUyKmuJbGIuBwYr3VcWW/0ReNVwnlncqNzUvG84PUiVH15NVJX+tUfiWOBBO8kmBng2YfxxbgdrHS7SwbyPC419RUMGcCpKuOn9uouib3uA6ev/Zu1Zu3f+S+W8coSKdjpJPEsacitUbv1J3zPCaY4Efm9gcCAwEAAQ=="
+        )
+
+        val paymentConfiguration = PaymentConfiguration(
+            localSecurityCheck = localSecurityCheck
+        )
+
+        payment = Payment(context = this, config = paymentConfiguration)
+
+        paymentConnection = payment.connect {
+            connectionSucceed {
+                // Connection to Bazaar established
+                checkPurchaseStatus()
+            }
+            connectionFailed { throwable ->
+                // Handle connection failure
+                Toast.makeText(this, "اتصال به بازار ناموفق بود", Toast.LENGTH_SHORT).show()
+            }
+            disconnected {
+                // Handle disconnection
+            }
+        }
+
+        // سایر کدهای شما...
 
         val splashScreenButton = findViewById<LinearLayout>(R.id.splash_screen)
         splashScreenButton.setOnClickListener {
@@ -136,7 +168,6 @@ class ThemeCustomizationActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-
         val logoutButton = findViewById<LinearLayout>(R.id.logout)
         logoutButton.setOnClickListener {
             showLoadingMessageOnce("logoutButton")
@@ -148,7 +179,6 @@ class ThemeCustomizationActivity : AppCompatActivity() {
             intent.putExtra("USER_ID", userId)
             intent.putExtra("BUTTON_TYPE", "LOGOUT")
             startActivity(intent)
-
         }
 
         val addNoteButtonIcon = findViewById<LinearLayout>(R.id.addNote)
@@ -162,7 +192,6 @@ class ThemeCustomizationActivity : AppCompatActivity() {
             intent.putExtra("USER_ID", userId)
             intent.putExtra("BUTTON_TYPE", "ADD_NOTE")
             startActivity(intent)
-
         }
 
         val attachButton = findViewById<LinearLayout>(R.id.attach)
@@ -221,8 +250,61 @@ class ThemeCustomizationActivity : AppCompatActivity() {
         textColor.setOnClickListener {
             showColorPickerDialog("انتخاب رنگ متن", "TEXT_COLOR")
         }
-
     }
+
+    private fun checkPurchaseStatus() {
+        val hasPurchased = sharedPreferences.getBoolean("HAS_PURCHASED", false)
+        if (!hasPurchased) {
+            initiatePurchase()
+        } else {
+            // User has already purchased, grant access
+            grantAccess()
+        }
+    }
+
+    private fun initiatePurchase() {
+        val purchaseRequest = PurchaseRequest(
+            productId = "PRODUCT_ID",
+            payload = "PAYLOAD"
+        )
+
+        payment.purchaseProduct(
+            registry = activityResultRegistry,
+            request = purchaseRequest
+        ) {
+            purchaseFlowBegan {
+                // Purchase flow started
+            }
+            failedToBeginFlow { throwable ->
+                // Handle failure to begin purchase flow
+                Toast.makeText(this, "شروع فرآیند خرید ناموفق بود", Toast.LENGTH_SHORT).show()
+            }
+            purchaseSucceed { purchaseEntity ->
+                // Purchase successful
+                sharedPreferences.edit().putBoolean("HAS_PURCHASED", true).apply()
+                grantAccess()
+            }
+            purchaseCanceled {
+                // Purchase canceled by user
+                Toast.makeText(this, "خرید توسط کاربر لغو شد", Toast.LENGTH_SHORT).show()
+            }
+            purchaseFailed { throwable ->
+                // Handle purchase failure
+                Toast.makeText(this, "خرید ناموفق بود", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun grantAccess() {
+        // Grant access to the user
+        Toast.makeText(this, "دسترسی کامل به برنامه داده شد", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onDestroy() {
+        paymentConnection.disconnect()
+        super.onDestroy()
+    }
+
     private fun showLoadingMessageOnce(buttonKey: String) {
         val hasShownMessage = sharedPreferences.getBoolean(buttonKey, false)
         if (!hasShownMessage) {
@@ -230,6 +312,7 @@ class ThemeCustomizationActivity : AppCompatActivity() {
             sharedPreferences.edit().putBoolean(buttonKey, true).apply()
         }
     }
+
     private fun applyMode(isDarkMode: Boolean) {
         val mainLayout = findViewById<RelativeLayout>(R.id.mainLayout)
         val themeSelectionText = findViewById<TextView>(R.id.theme_selection_text)
@@ -250,7 +333,6 @@ class ThemeCustomizationActivity : AppCompatActivity() {
         val editTextButtonText = findViewById<TextView>(R.id.edit_text_button_text)
         val textColorText = findViewById<TextView>(R.id.text_color_text)
 
-
         if (isDarkMode) {
             mainLayout.setBackgroundColor(ContextCompat.getColor(this, android.R.color.black))
             themeSelectionText.setTextColor(ContextCompat.getColor(this, android.R.color.white))
@@ -270,7 +352,6 @@ class ThemeCustomizationActivity : AppCompatActivity() {
             loginButtonText.setTextColor(ContextCompat.getColor(this, android.R.color.white))
             editTextButtonText.setTextColor(ContextCompat.getColor(this, android.R.color.white))
             textColorText.setTextColor(ContextCompat.getColor(this, android.R.color.white))
-
         } else {
             mainLayout.setBackgroundColor(ContextCompat.getColor(this, android.R.color.white))
             themeSelectionText.setTextColor(ContextCompat.getColor(this, android.R.color.black))
@@ -293,7 +374,7 @@ class ThemeCustomizationActivity : AppCompatActivity() {
         }
     }
 
-        private fun showColorPickerDialog(
+    private fun showColorPickerDialog(
         title: String,
         preferenceKey: String,
         isDarkMode: Boolean = sharedPreferences.getBoolean("DARK_MODE", false)
@@ -330,14 +411,9 @@ class ThemeCustomizationActivity : AppCompatActivity() {
         }
     }
 
-
     private fun showColorSelectedMessage(hexColor: String) {
         Toast.makeText(this, "رنگ $hexColor انتخاب شد", Toast.LENGTH_SHORT).show()
     }
-
-
-
-
 
     override fun onBackPressed() {
         super.onBackPressed()
